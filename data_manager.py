@@ -26,6 +26,11 @@ class DataManager(QObject):
     # Если список пуст/None -> полное обновление.
     hosts_updated = pyqtSignal(list)
     
+    # Детальные события для подписчиков (Repository pattern)
+    host_added = pyqtSignal(Host)  # Хост добавлен
+    host_deleted = pyqtSignal(str, Host)  # (host_id, old_host)
+    host_info_updated = pyqtSignal(str, Host, Host)  # (host_id, old_host, new_host)
+    
     def __init__(self, db_manager: DatabaseManager):
         super().__init__()
         self.db_manager = db_manager
@@ -68,7 +73,10 @@ class DataManager(QObject):
         query.bindValue(":notifications_enabled", 1 if host.notifications_enabled else 0)
         
         if query.exec_():
-            self._trigger_update() # Полное обновление для корректного отображения и сортировки
+            # Эмитим детальное событие
+            self.host_added.emit(host)
+            # Затем общее обновление UI
+            self._trigger_update()
             return True
         else:
             logging.error(f"Ошибка добавления хоста: {query.lastError().text()}")
@@ -119,12 +127,22 @@ class DataManager(QObject):
 
     def delete_host(self, host_id: str) -> bool:
         """Удаление хоста"""
+        # Сначала получаем хост для события
+        old_host = None
+        hosts = self.get_hosts_by_ids([host_id])
+        if hosts:
+            old_host = hosts[0]
+        
         query = QSqlQuery()
         query.prepare("DELETE FROM hosts WHERE id = :id")
         query.bindValue(":id", host_id)
         
         if query.exec_():
-            self._trigger_update() # Полное обновление списка, т.к. удаление
+            # Эмитим детальное событие
+            if old_host:
+                self.host_deleted.emit(host_id, old_host)
+            # Затем общее обновление UI
+            self._trigger_update()
             return True
         return False
 
@@ -164,6 +182,12 @@ class DataManager(QObject):
 
     def update_host_info(self, host: Host) -> bool:
         """Обновление информации о хосте (имя, ip, группа и т.д.)"""
+        # Сначала получаем старое состояние для события
+        old_host = None
+        hosts = self.get_hosts_by_ids([host.id])
+        if hosts:
+            old_host = hosts[0]
+        
         query = QSqlQuery()
         query.prepare("""
             UPDATE hosts 
@@ -180,7 +204,11 @@ class DataManager(QObject):
         query.bindValue(":id", host.id)
         
         if query.exec_():
-            self._trigger_update() # Полное обновление для пересортировки
+            # Эмитим детальное событие
+            if old_host:
+                self.host_info_updated.emit(host.id, old_host, host)
+            # Затем общее обновление UI
+            self._trigger_update()
             return True
         else:
             logging.error(f"Ошибка обновления информации хоста {host.id}: {query.lastError().text()}")

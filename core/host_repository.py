@@ -21,12 +21,23 @@ class HostRepository(QObject):
     # Proxy signals (перенаправляем или адаптируем сигналы DataManager)
     hosts_updated = pyqtSignal(list)  # list[str] IDs
     
+    # Детальные события для подписчиков
+    host_added = pyqtSignal(Host)  # Хост добавлен
+    host_deleted = pyqtSignal(str, Host)  # (host_id, old_host)
+    host_info_updated = pyqtSignal(str, Host, Host)  # (host_id, old_host, new_host)
+    
     def __init__(self, data_manager: DataManager):
         super().__init__()
         self._data_manager = data_manager
         
         # Подписка на обновления от DataManager
         self._data_manager.hosts_updated.connect(self._on_data_manager_update)
+        
+        # Подписка на детальные события
+        self._data_manager.host_added.connect(self.host_added.emit)
+        self._data_manager.host_deleted.connect(self.host_deleted.emit)
+        self._data_manager.host_info_updated.connect(self.host_info_updated.emit)
+        
         logging.info("HostRepository initialized (wrapping DataManager)")
 
     def _on_data_manager_update(self, host_ids: List[str]):

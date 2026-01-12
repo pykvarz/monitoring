@@ -116,6 +116,32 @@ class UIComponents:
         return frame, dashboard_labels
     
     @staticmethod
+    def create_search_bar(parent, groups, theme: str = "light"):
+        """Создает поиск и фильтр по группам (справа сверху над таблицей)"""
+        search_layout = QHBoxLayout()
+        search_layout.setSpacing(10)
+        
+        # Добавляем растяжку слева чтобы элементы были справа
+        search_layout.addStretch()
+        
+        # Фильтр по группам
+        group_filter = QComboBox()
+        group_filter.addItem("📁 Все группы")
+        group_filter.addItems(groups)
+        group_filter.setMinimumWidth(150)
+        
+        # Поле поиска
+        search_edit = QLineEdit()
+        search_edit.setPlaceholderText("🔍 Поиск...")
+        search_edit.setMinimumWidth(250)
+        search_edit.setClearButtonEnabled(True)
+        
+        search_layout.addWidget(group_filter)
+        search_layout.addWidget(search_edit)
+        
+        return search_layout, search_edit, group_filter
+    
+    @staticmethod
     def _create_stat_card(key: str, svg_data: str, title: str, value: str, color: str, theme="light") -> ClickableLabel:
         """Создание карточки статистики"""
         label = ClickableLabel(key)
@@ -141,107 +167,4 @@ class UIComponents:
         label.setAlignment(Qt.AlignCenter)
         return label
     
-    @staticmethod
-    def create_toolbar(parent, theme="light") -> QHBoxLayout:
-        """Создание панели инструментов"""
-        layout = QHBoxLayout()
-        layout.setSpacing(8)
-        
-        # Кнопки управления
-        btn_add = QPushButton(" Добавить узел")
-        btn_add.setIcon(UIComponents._get_qicon(get_svg_add_host(theme)))
-        btn_add.clicked.connect(parent._add_host)
-        
-        btn_add_group = QPushButton(" Создать группу")
-        btn_add_group.setIcon(UIComponents._get_qicon(get_svg_add_group(theme)))
-        btn_add_group.clicked.connect(parent._add_group)
-        
-        btn_import = QPushButton(" Импорт")
-        btn_import.setIcon(UIComponents._get_qicon(get_svg_import(theme)))
-        btn_import.clicked.connect(parent._import_from_excel)
-        
-        btn_export = QPushButton(" Экспорт")
-        btn_export.setIcon(UIComponents._get_qicon(get_svg_export(theme)))
-        btn_export.clicked.connect(parent._export_to_excel)
-        
-        btn_scan = QPushButton(" Проверить")
-        btn_scan.setIcon(UIComponents._get_qicon(get_svg_scan(theme)))
-        btn_scan.clicked.connect(parent._force_scan)
-        
-        btn_bulk = QPushButton(" Массовые действия")
-        btn_bulk.setIcon(UIComponents._get_qicon(get_svg_bulk(theme)))
-        btn_bulk.setObjectName("btn_bulk")
-                                
-        btn_theme = QPushButton(" Тема")
-        btn_theme.setIcon(UIComponents._get_qicon(get_svg_theme(theme)))
-        btn_theme.setToolTip("Переключить темную/светлую тему")
-        btn_theme.clicked.connect(parent._toggle_theme)
-
-        btn_settings = QPushButton(" Настройки")
-        btn_settings.setIcon(UIComponents._get_qicon(get_svg_settings(theme)))
-        btn_settings.clicked.connect(parent._open_settings)
-        
-        # Стилизация кнопок
-        for btn in [btn_add, btn_add_group, btn_import, btn_export, btn_scan, btn_bulk, btn_theme, btn_settings]:
-            btn.setStyleSheet(get_button_style(theme))
-        
-        layout.addWidget(btn_add)
-        layout.addWidget(btn_add_group)
-        layout.addWidget(btn_import)
-        layout.addWidget(btn_export)
-        layout.addWidget(btn_scan)
-        layout.addWidget(btn_bulk)
-        layout.addWidget(btn_theme)
-        layout.addWidget(btn_settings)
-        layout.addStretch()
-        
-        return layout
-    
-    @staticmethod
-    def create_filters(parent, groups: List, theme="light") -> Tuple[QHBoxLayout, QLineEdit, QComboBox, QComboBox, QPushButton]:
-        """
-        Создание панели фильтров
-        
-        Note: Сигналы подключаются FilterManager'ом, не здесь
-        
-        Returns:
-            Tuple: (layout, search_edit, group_filter, status_filter, reset_button)
-        """
-        layout = QHBoxLayout()
-        layout.setSpacing(8)
-        
-        # Поиск
-        search_edit = QLineEdit()
-        search_edit.setPlaceholderText("🔍 Поиск по названию или IP...")
-        search_edit.setClearButtonEnabled(True)
-        # Сигнал textChanged будет подключен FilterManager'ом
-        
-        # Фильтр по группам
-        group_filter = QComboBox()
-        group_filter.addItem("📁 Все группы")
-        group_filter.addItems(groups)
-        # Сигнал currentIndexChanged будет подключен FilterManager'ом
-        
-        # Фильтр по статусу
-        status_filter = QComboBox()
-        status_filter.addItem("📊 Все статусы")
-        for status in HostStatus:
-            icon = UIComponents._get_qicon(status.svg)
-            status_filter.addItem(icon, status.title)
-        # Сигнал currentIndexChanged будет подключен FilterManager'ом
-        
-        # Кнопка сброса фильтров
-        btn_reset = QPushButton(" Сбросить")
-        btn_reset.setIcon(UIComponents._get_qicon(get_svg_delete(theme)))
-        # Сигнал clicked будет подключен в MainWindow к FilterManager'у
-        
-        # Стилизация
-        btn_reset.setStyleSheet(get_button_style(theme))
-        
-        layout.addWidget(search_edit)
-        layout.addWidget(group_filter)
-        layout.addWidget(status_filter)
-        layout.addWidget(btn_reset)
-        layout.addStretch()
-        
-        return layout, search_edit, group_filter, status_filter, btn_reset
+    # create_toolbar and create_filters methods removed - no longer used in UI\r\n

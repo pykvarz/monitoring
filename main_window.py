@@ -9,8 +9,8 @@ import subprocess
 from datetime import datetime
 from typing import List, Dict
 from PyQt5.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QLabel, QPushButton,
-    QMessageBox, QDialog, QMenu, QInputDialog
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QMessageBox, QDialog, QMenu, QInputDialog, QFrame
 )
 from PyQt5.QtCore import QMutex, QTimer, Qt, pyqtSlot, QMutexLocker, QPoint, QModelIndex
 
@@ -38,12 +38,14 @@ from theme_manager import ThemeManager
 from dashboard_manager import DashboardManager
 from export_import_manager import ExportImportManager
 from context_menu_manager import ContextMenuManager
+from table_settings_manager import TableSettingsManager
+
+# Builders
+from menu_builder import MenuBuilder
 
 # Константы и стили
 from constants import (
     get_menu_style, SCAN_LABEL_STYLE_ACTIVE, SCAN_LABEL_STYLE_FINISHED,
-    SVG_MAINTENANCE, SVG_OFFLINE, SVG_WAITING, SVG_ONLINE,
-    get_svg_add_group, get_svg_delete, get_svg_ping, get_svg_edit,
     get_main_style, get_table_style, get_dashboard_style
 )
 
@@ -86,6 +88,7 @@ class MainWindow(QMainWindow):
         self._dashboard_manager: DashboardManager = None
         self._export_import_manager: ExportImportManager = None
         self._context_menu_manager: ContextMenuManager = None
+        self._table_settings_manager: TableSettingsManager = None
         
         # Состояние
         self._is_scanning = False
@@ -131,30 +134,48 @@ class MainWindow(QMainWindow):
         self._main_layout.setSpacing(10)
         self._main_layout.setContentsMargins(10, 10, 10, 10)
 
-        # === Dashboard ===
+        # === Dashboard + Поиск + Фильтры (в одной строке) ===
+        top_layout = QHBoxLayout()
+        top_layout.setSpacing(15)
+        
+        # Dashboard слева
         self._dashboard_frame, self._dashboard_labels = UIComponents.create_dashboard(theme)
-        self._main_layout.addWidget(self._dashboard_frame)
         for label in self._dashboard_labels.values():
             label.clicked.connect(self._on_dashboard_clicked)
-
-        # === Панель инструментов ===
-        self._toolbar_layout = UIComponents.create_toolbar(self, theme)
-        self._main_layout.addLayout(self._toolbar_layout)
-
-        # === Панель фильтров ===
-        # Для init нужны группы, пока пустые
-        filter_result = UIComponents.create_filters(self, [], theme)
-        self._filters_layout = filter_result[0]
-        self._search_edit = filter_result[1]
-        self._group_filter = filter_result[2]
-        self._status_filter = filter_result[3]
-        self._reset_filters_btn = filter_result[4]
-        self._main_layout.addLayout(self._filters_layout)
+        
+        # Извлекаем внутренний layout из dashboard frame
+        dashboard_inner_layout = self._dashboard_frame.layout()
+        
+        # Добавляем dashboard labels в общий layout
+        for label in self._dashboard_labels.values():
+            top_layout.addWidget(label)
+        
+        # Растяжка между dashboard и фильтрами
+        top_layout.addStretch()
+        
+        # Фильтры справа
+        search_result = UIComponents.create_search_bar(self, [], theme)
+        self._group_filter = search_result[2]
+        self._search_edit = search_result[1]
+        
+        # Добавляем фильтры в общий layout
+        top_layout.addWidget(self._group_filter)
+        top_layout.addWidget(self._search_edit)
+        
+        # Оборачиваем в frame для стиля
+        top_frame = QFrame()
+        top_frame.setFrameStyle(QFrame.StyledPanel | QFrame.Raised)
+        top_frame.setStyleSheet(get_dashboard_style(theme))
+        top_frame.setLayout(top_layout)
+        
+        self._main_layout.addWidget(top_frame)
+        
+        # === Меню ===
+        MenuBuilder.create_menu_bar(self, theme)
 
         # === Таблица ===
         self._table, self._table_model = UIComponents.create_table(self, theme)
         self._table.setItemDelegateForColumn(0, CenteredIconDelegate(self._table))
-        self._restore_table_settings()
         self._connect_table_signals()
         self._main_layout.addWidget(self._table)
 
@@ -168,39 +189,54 @@ class MainWindow(QMainWindow):
 
     def _init_managers(self) -> None:
         """Инициализация менеджеров"""
+        # Filter Manager - поиск + группы (без статуса)
         self._filter_manager = FilterManager(
-            self._search_edit, self._group_filter, 
-            self._status_filter, self._table, self._table_model
+            self._search_edit, 
+            self._group_filter,  # Теперь есть фильтр групп
+            None,  # status_filter отключен
+            self._table, 
+            self._table_model
         )
-        if self._reset_filters_btn:
-            self._reset_filters_btn.clicked.connect(self._filter_manager.reset_filters)
         
+        # Table Settings Manager
+        self._table_settings_manager = TableSettingsManager(
+            self._table, self._config, self._storage
+        )
+        self._table_settings_manager.restore_settings()
+        
+        # Theme Manager
         self._theme_manager = ThemeManager(
             self, self._config, self._storage, 
             self._table, self._table_model
         )
+        # Dashboard уже встроен в top_frame, передаем None
         self._theme_manager.set_ui_components(
-            self._dashboard_frame, self._dashboard_labels,
-            self._toolbar_layout, self._filters_layout,
+            None,  # dashboard_frame теперь часть top_frame
+            self._dashboard_labels,
+            None,  # toolbar удален
+            None,  # filters удалены
             refresh_callback=lambda: self._dashboard_manager.force_refresh()
         )
         
+        # Dashboard Manager
         self._dashboard_manager = DashboardManager(self._dashboard_labels, self._config)
         
+        # Export/Import Manager
         self._export_import_manager = ExportImportManager(self, self._repository)
         
-        # ContextMenuManager (Updated)
+        # Context Menu Manager
         self._context_menu_manager = ContextMenuManager(
             self, self._table, self._table_model,
             self._groups, 
             lambda: self._theme_manager.get_current_theme(),
-            self._repository  # Pass repository instead of data_manager
+            self._repository
         )
         self._connect_context_menus()
         
-        btn_bulk = self.findChild(QPushButton, "btn_bulk")
-        if btn_bulk:
-            btn_bulk.clicked.connect(lambda: self._context_menu_manager.show_bulk_menu(btn_bulk))
+        # btn_bulk удален из UI
+        # btn_bulk = self.findChild(QPushButton, "btn_bulk")
+        # if btn_bulk:
+        #     btn_bulk.clicked.connect(lambda: self._context_menu_manager.show_bulk_menu(btn_bulk))
         
         self._theme_manager.set_window_icon(self._theme_manager.get_current_theme())
 
@@ -231,10 +267,6 @@ class MainWindow(QMainWindow):
             
             # Обновление статистики (легкое)
             self._update_dashboard_stats()
-            
-            # Обновляем фильтры
-            if self._filter_manager:
-                self._filter_manager.apply_filters()
 
     def _refresh_table(self, full_reload: bool = False):
         """Полная перезагрузка данных таблицы"""
@@ -248,14 +280,15 @@ class MainWindow(QMainWindow):
             new_groups = sorted(list(set(new_groups + self._config.custom_groups)))
             
         self._groups = new_groups or ["Default"]
-        self._filter_manager.update_group_filter(self._groups)
+        
+        # Обновляем фильтр групп
+        if self._filter_manager:
+            self._filter_manager.update_group_filter(self._groups)
+        
         self._context_menu_manager.update_groups(self._groups)
         
         # Статистика
         self._update_dashboard_stats()
-        
-        if full_reload:
-            self._filter_manager.apply_filters()
 
     def _update_dashboard_stats(self):
         """Обновление дашборда запросом в БД"""
@@ -296,40 +329,16 @@ class MainWindow(QMainWindow):
 
     # ==================== TABLE SETTINGS ====================
 
-    def _restore_table_settings(self) -> None:
-        header = self._table.horizontalHeader()
-        if self._config.column_widths:
-            for col_idx_str, width in self._config.column_widths.items():
-                try:
-                    self._table.setColumnWidth(int(col_idx_str), width)
-                except (ValueError, TypeError):
-                    pass
-        if getattr(self._config, 'column_order', None):
-            if len(self._config.column_order) == header.count():
-                try:
-                    header.blockSignals(True)
-                    for visual_idx, logical_idx in enumerate(self._config.column_order):
-                        if 0 <= logical_idx < header.count():
-                            current_visual = header.visualIndex(logical_idx)
-                            if current_visual != visual_idx:
-                                header.moveSection(current_visual, visual_idx)
-                finally:
-                    header.blockSignals(False)
-        if self._config.hidden_columns:
-            for col_idx in self._config.hidden_columns:
-                if 0 <= col_idx < header.count():
-                    self._table.setColumnHidden(col_idx, True)
-
     def _connect_table_signals(self) -> None:
+        """Подключение сигналов таблицы"""
         header = self._table.horizontalHeader()
-        header.sectionResized.connect(self._on_column_resized)
-        header.sectionMoved.connect(self._on_column_moved)
         header.setDefaultAlignment(Qt.AlignCenter)
         header.setContextMenuPolicy(Qt.CustomContextMenu)
         self._table.setContextMenuPolicy(Qt.CustomContextMenu)
         self._table.doubleClicked.connect(self._on_table_double_clicked)
     
     def _connect_context_menus(self) -> None:
+        """Подключение контекстных меню"""
         header = self._table.horizontalHeader()
         header.customContextMenuRequested.connect(
             lambda pos: self._context_menu_manager.show_header_context_menu(pos, self._config)
@@ -344,19 +353,21 @@ class MainWindow(QMainWindow):
         HostManager.edit_host(self, index.row(), self._table_model, self._groups, self._repository)
 
     def _on_dashboard_clicked(self, key: str):
-        if not self._filter_manager: return
+        """Dashboard клики - фильтрация"""
         if key == 'total':
-            self._filter_manager.reset_filters()
+            # Показываем ВСЕ узлы
+            if self._filter_manager:
+                self._filter_manager.reset_filters()
+            # Явно показываем все строки
+            for row in range(self._table_model.rowCount()):
+                self._table.setRowHidden(row, False)
         else:
-            status_map = {
-                'online': HostStatus.ONLINE.title,
-                'waiting': HostStatus.WAITING.title,
-                'offline': HostStatus.OFFLINE.title,
-                'maintenance': HostStatus.MAINTENANCE.title
-            }
-            target_title = status_map.get(key)
-            if target_title:
-                self._filter_manager.set_status_filter(target_title)
+            status_map = {'online': 'ONLINE', 'waiting': 'WAITING', 'offline': 'OFFLINE', 'maintenance': 'MAINTENANCE'}
+            target = status_map.get(key)
+            if target:
+                for row in range(self._table_model.rowCount()):
+                    host = self._table_model.get_host(row)
+                    self._table.setRowHidden(row, host.status != target if host else True)
 
     def _add_host(self) -> None:
         HostManager.add_host(self, self._groups, self._repository)
@@ -404,24 +415,20 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Принудительная проверка запущена...", 3000)
 
     def update_hidden_columns_config(self):
-        header = self._table.horizontalHeader()
-        hidden = []
-        for i in range(header.count()):
-            if self._table.isColumnHidden(i):
-                hidden.append(i)
-        self._config.hidden_columns = hidden
-        self._storage.save_config(self._config)
-
-    def _on_column_resized(self, index: int, old_size: int, new_size: int) -> None:
-        if not self._config.column_widths: self._config.column_widths = {}
-        self._config.column_widths[str(index)] = new_size
-        self._storage.save_config(self._config)
-
-    def _on_column_moved(self, logical_index: int, old_visual: int, new_visual: int) -> None:
-        header = self._table.horizontalHeader()
-        new_order = [header.logicalIndex(i) for i in range(header.count())]
-        self._config.column_order = new_order
-        self._storage.save_config(self._config)
+        """Обновление конфигурации скрытых колонок (делегирование в TableSettingsManager)"""
+        if self._table_settings_manager:
+            self._table_settings_manager.update_hidden_columns()
+    
+    def _show_about_dialog(self):
+        """Показать диалог 'О программе'"""
+        QMessageBox.about(
+            self,
+            "О программе",
+            "<h3>Network Monitor</h3>"
+            "<p>Версия: 3.0 (SQLite Architecture)</p>"
+            "<p>Приложение для мониторинга сетевых узлов</p>"
+            "<p>© 2024</p>"
+        )
 
     def closeEvent(self, event):
         logging.info("Application closing...")

@@ -38,10 +38,13 @@ class FilterManager:
         self._filter_timer.setInterval(300)
         self._filter_timer.timeout.connect(self._apply_filters_internal)
         
-        # Подключаем сигналы
-        self._search_edit.textChanged.connect(self._schedule_filter)
-        self._group_filter.currentIndexChanged.connect(self.apply_filters)
-        self._status_filter.currentIndexChanged.connect(self.apply_filters)
+        # Подключаем сигналы только если виджеты существуют
+        if self._search_edit:
+            self._search_edit.textChanged.connect(self._schedule_filter)
+        if self._group_filter:
+            self._group_filter.currentIndexChanged.connect(self.apply_filters)
+        if self._status_filter:
+            self._status_filter.currentIndexChanged.connect(self.apply_filters)
     
     def _schedule_filter(self) -> None:
         """Планирование фильтрации с debounce (только для текстового поиска)"""
@@ -53,9 +56,20 @@ class FilterManager:
 
     def apply_filters(self) -> None:
         """Применение всех активных фильтров к таблице"""
-        search_text = self._search_edit.text().lower()
-        group_filter = self._group_filter.currentText().replace("📁 ", "")
-        status_filter = self._status_filter.currentText()
+        search_text = self._search_edit.text().lower() if self._search_edit else ""
+        
+        # Получаем фильтры только если виджеты существуют
+        group_filter = None
+        if self._group_filter:
+            group_filter = self._group_filter.currentText().replace("📁 ", "")
+            if group_filter == "Все группы":
+                group_filter = None
+        
+        status_filter = None
+        if self._status_filter:
+            status_filter = self._status_filter.currentText()
+            if status_filter == "📊 Все статусы":
+                status_filter = None
 
         # Получаем данные о статусах для сопоставления заголовка и кода (ONLINE, etc)
         status_map = {s.title: s.name for s in HostStatus}
@@ -72,12 +86,12 @@ class FilterManager:
                 text_to_search = f"{host.name} {host.ip} {host.address} {host.group}".lower()
                 show = search_text in text_to_search
 
-            # Фильтр по группе
-            if show and group_filter != "Все группы":
+            # Фильтр по группе (если активен)
+            if show and group_filter:
                 show = host.group == group_filter
 
-            # Фильтр по статусу
-            if show and status_filter != "📊 Все статусы":
+            # Фильтр по статусу (если активен)
+            if show and status_filter:
                 target_status_name = status_map.get(status_filter)
                 show = host.status == target_status_name
 
@@ -85,9 +99,12 @@ class FilterManager:
 
     def reset_filters(self) -> None:
         """Сброс всех фильтров"""
-        self._search_edit.clear()
-        self._group_filter.setCurrentIndex(0)
-        self._status_filter.setCurrentIndex(0)
+        if self._search_edit:
+            self._search_edit.clear()
+        if self._group_filter:
+            self._group_filter.setCurrentIndex(0)
+        if self._status_filter:
+            self._status_filter.setCurrentIndex(0)
         # apply_filters будет вызван автоматически через сигналы
 
     def update_group_filter(self, groups: List[str]) -> None:
@@ -97,6 +114,9 @@ class FilterManager:
         Args:
             groups: Список доступных групп
         """
+        if not self._group_filter:
+            return  # Фильтр отключен
+        
         current_group = self._group_filter.currentText()
         self._group_filter.blockSignals(True)  # Блокируем сигналы для избежания лишних перерисовок
         self._group_filter.clear()
@@ -117,6 +137,9 @@ class FilterManager:
         Args:
             status_title: Название статуса (например, "Online")
         """
+        if not self._status_filter:
+            return  # Фильтр отключен
+        
         index = self._status_filter.findText(status_title)
         if index >= 0:
             self._status_filter.setCurrentIndex(index)

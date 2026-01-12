@@ -43,6 +43,7 @@ class MonitorThread(QThread):
         self._running = True
         self._executor: ThreadPoolExecutor = None
         self._force_scan_flag = False
+        self._interrupt_flag = False  # Флаг для прерывания текущего цикла
         self._update_executor()
 
     def _update_executor(self) -> None:
@@ -66,7 +67,16 @@ class MonitorThread(QThread):
             self._update_executor()
 
     def force_scan(self) -> None:
+        """Принудительное сканирование"""
         self._force_scan_flag = True
+    
+    def interrupt_cycle(self) -> None:
+        """
+        Прервать текущий цикл мониторинга и запустить новый.
+        Используется при критичных изменениях хостов (добавление, удаление, смена IP).
+        """
+        logging.info("MonitorThread: Cycle interrupt requested")
+        self._interrupt_flag = True
 
     def stop(self) -> None:
         self._running = False
@@ -130,7 +140,7 @@ class MonitorThread(QThread):
 
                     # 3. Обрабатываем результаты
                     for future in as_completed(futures):
-                        if not self._running:
+                        if not self._running or self._interrupt_flag:
                             break
 
                         host = futures[future]
@@ -151,6 +161,12 @@ class MonitorThread(QThread):
 
                         except Exception as e:
                             logging.error(f"Error processing host result: {e}")
+                    
+                    # Проверяем флаг прерывания
+                    if self._interrupt_flag:
+                        logging.info("MonitorThread: Cycle interrupted, restarting immediately")
+                        self._interrupt_flag = False
+                        continue  # Немедленно начать новый цикл
 
                     if newly_offline:
                         self.hosts_offline.emit(newly_offline)
@@ -162,8 +178,14 @@ class MonitorThread(QThread):
                     while elapsed_wait < self._config.poll_interval * 1000 and self._running:
                         self.msleep(100)
                         elapsed_wait += 100
+                        
+                        # Проверка флагов для прерывания паузы
                         if self._force_scan_flag:
                             self._force_scan_flag = False
+                            break
+                        if self._interrupt_flag:
+                            self._interrupt_flag = False
+                            logging.info("MonitorThread: Wait interrupted, starting new cycle")
                             break
 
                 except Exception as e:
