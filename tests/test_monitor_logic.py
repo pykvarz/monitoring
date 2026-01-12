@@ -20,30 +20,39 @@ class TestMonitorLogic(unittest.TestCase):
         self.mock_config.poll_interval = 2
         self.mock_config.max_workers = 5
         
-        # Create instance without calling __init__ fully if possible?
-        # No, QThread init is safe usually. 
         self.thread = MonitorThread(self.mock_repo, self.mock_config)
 
     def test_online_remains_online(self):
-        host = Host("1", "127.0.0.1", "Local", status="ONLINE")
+        # Case 1: Just updated (Fresh) -> No DB Write
+        now = datetime.now(timezone.utc)
+        host = Host(id="1", ip="127.0.0.1", name="Local", status="ONLINE", last_seen=now.isoformat())
+        ping_status = "ONLINE"
+        
+        new_status, offline_since, update = self.thread._calculate_status(host, ping_status, now)
+        
+        self.assertEqual(new_status, "ONLINE")
+        self.assertFalse(update) # Should trigger throttling (0 seconds diff)
+
+    def test_online_throttling_expired(self):
+        # Case 2: Old update -> DB Write
+        old_time = datetime.now(timezone.utc) - timedelta(seconds=61)
+        host = Host(id="1", ip="127.0.0.1", name="Local", status="ONLINE", last_seen=old_time.isoformat())
         ping_status = "ONLINE"
         now = datetime.now(timezone.utc)
         
         new_status, offline_since, update = self.thread._calculate_status(host, ping_status, now)
         
         self.assertEqual(new_status, "ONLINE")
-        self.assertIsNone(offline_since)
-        self.assertTrue(update)
+        self.assertTrue(update) # Threshold exceeded, should update
 
     def test_online_to_waiting_logic(self):
         # Initial failure
-        host = Host("1", "127.0.0.1", "Local", status="ONLINE")
+        host = Host(id="1", ip="127.0.0.1", name="Local", status="ONLINE")
         ping_status = "OFFLINE"
         now = datetime.now(timezone.utc)
         
         new_status, offline_since, update = self.thread._calculate_status(host, ping_status, now)
         
-        # Should set offline_since, but status stays ONLINE (or whatever) until timeout
         self.assertEqual(new_status, "ONLINE")
         self.assertIsNotNone(offline_since)
         self.assertTrue(update)
@@ -51,7 +60,7 @@ class TestMonitorLogic(unittest.TestCase):
     def test_waiting_logic(self):
         # 10 seconds later (Waiting phase)
         start_time = datetime.now(timezone.utc) - timedelta(seconds=10)
-        host = Host("1", "127.0.0.1", "Local", status="ONLINE", offline_since=start_time.isoformat())
+        host = Host(id="1", ip="127.0.0.1", name="Local", status="ONLINE", offline_since=start_time.isoformat())
         ping_status = "OFFLINE"
         now = datetime.now(timezone.utc)
         
@@ -64,7 +73,7 @@ class TestMonitorLogic(unittest.TestCase):
         # 40 seconds later (Offline phase)
         start_time = datetime.now(timezone.utc) - timedelta(seconds=40)
         # Note: Previous status could be WAITING or ONLINE depending on checks
-        host = Host("1", "127.0.0.1", "Local", status="WAITING", offline_since=start_time.isoformat())
+        host = Host(id="1", ip="127.0.0.1", name="Local", status="WAITING", offline_since=start_time.isoformat())
         ping_status = "OFFLINE"
         now = datetime.now(timezone.utc)
         
@@ -75,7 +84,7 @@ class TestMonitorLogic(unittest.TestCase):
 
     def test_offline_remains_offline(self):
         start_time = datetime.now(timezone.utc) - timedelta(seconds=100)
-        host = Host("1", "127.0.0.1", "Local", status="OFFLINE", offline_since=start_time.isoformat())
+        host = Host(id="1", ip="127.0.0.1", name="Local", status="OFFLINE", offline_since=start_time.isoformat())
         ping_status = "OFFLINE"
         now = datetime.now(timezone.utc)
         
@@ -84,7 +93,7 @@ class TestMonitorLogic(unittest.TestCase):
         self.assertEqual(new_status, "OFFLINE")
         
     def test_offline_to_online(self):
-        host = Host("1", "127.0.0.1", "Local", status="OFFLINE", offline_since="some_date")
+        host = Host(id="1", ip="127.0.0.1", name="Local", status="OFFLINE", offline_since="some_date")
         ping_status = "ONLINE"
         now = datetime.now(timezone.utc)
         
@@ -95,7 +104,7 @@ class TestMonitorLogic(unittest.TestCase):
         self.assertTrue(update)
 
     def test_maintenance_ignores_offline(self):
-        host = Host("1", "127.0.0.1", "Local", status="MAINTENANCE")
+        host = Host(id="1", ip="127.0.0.1", name="Local", status="MAINTENANCE")
         ping_status = "OFFLINE"
         now = datetime.now(timezone.utc)
         

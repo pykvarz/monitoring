@@ -190,11 +190,24 @@ class MonitorThread(QThread):
                 offline_since = None
                 should_update = True
             
-            # Update last_seen unconditionally (handled by DataManager via update_host_status implicitly or we force update)
-            # Logic says: if online, we want to update last_seen. 
-            # If status didn't change, we still set should_update=True to force last_seen update?
-            if not should_update:
-                should_update = True 
+            # Optimization: Heartbeat Throttling (Reduce DB I/O)
+            # Only update last_seen if it's been more than 60 seconds (or never set)
+            # This prevents writing to DB on every single ping (e.g. every 2s)
+            elif not should_update:
+                if not host.last_seen:
+                    should_update = True
+                else:
+                    try:
+                        last_seen_dt = datetime.fromisoformat(host.last_seen)
+                        if last_seen_dt.tzinfo is None:
+                            last_seen_dt = last_seen_dt.replace(tzinfo=timezone.utc)
+                        
+                        # Throttle threshold: 60 seconds
+                        if (current_time - last_seen_dt).total_seconds() > 60:
+                             should_update = True
+                             
+                    except ValueError:
+                        should_update = True
 
         else: # OFFLINE / WAITING / MAINTENANCE
                 if host.status == "MAINTENANCE":
