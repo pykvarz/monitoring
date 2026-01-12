@@ -24,6 +24,7 @@ from di_container import DIContainer, setup_container
 from interfaces import IStorageRepository, INotificationService
 from database import DatabaseManager
 from data_manager import DataManager
+from core.host_repository import HostRepository
 
 # UI компоненты
 from dialogs import SettingsDialog
@@ -61,7 +62,8 @@ class MainWindow(QMainWindow):
             container = setup_container()
         self._container = container
         
-        self._data_manager = container.resolve(DataManager)
+        # Use Repository as Single Source of Truth
+        self._repository = container.resolve(HostRepository)
         self._db_manager = container.resolve(DatabaseManager)
         self._storage = container.resolve(IStorageRepository)
         self._config = self._storage.load_config()
@@ -98,8 +100,8 @@ class MainWindow(QMainWindow):
         self._init_managers()
         self._init_monitor_thread()
         
-        # Подключение сигналов DataManager
-        self._data_manager.hosts_updated.connect(self._on_hosts_updated)
+        # Подключение сигналов Repository
+        self._repository.hosts_updated.connect(self._on_hosts_updated)
         
         self._load_initial_data()
 
@@ -117,7 +119,7 @@ class MainWindow(QMainWindow):
 
     def _init_ui(self) -> None:
         """Инициализация интерфейса"""
-        self.setWindowTitle("Network Monitor - Мониторинг сетевых узлов (SQLite Optimized)")
+        self.setWindowTitle("Network Monitor - Мониторинг сетевых узлов (SQLite Architecture)")
         self.setGeometry(100, 100, 1400, 800)
         
         theme = getattr(self._config, 'theme', 'light')
@@ -185,14 +187,14 @@ class MainWindow(QMainWindow):
         
         self._dashboard_manager = DashboardManager(self._dashboard_labels, self._config)
         
-        self._export_import_manager = ExportImportManager(self, self._storage)
+        self._export_import_manager = ExportImportManager(self, self._repository)
         
         # ContextMenuManager (Updated)
         self._context_menu_manager = ContextMenuManager(
             self, self._table, self._table_model,
             self._groups, 
             lambda: self._theme_manager.get_current_theme(),
-            self._data_manager
+            self._repository  # Pass repository instead of data_manager
         )
         self._connect_context_menus()
         
@@ -203,11 +205,13 @@ class MainWindow(QMainWindow):
         self._theme_manager.set_window_icon(self._theme_manager.get_current_theme())
 
     def _init_monitor_thread(self) -> None:
-        """Инициализация потока мониторинга с DataManager"""
-        self._monitor_thread = MonitorThread(self._data_manager, self._config)
+        """Инициализация потока мониторинга с Repository"""
+        self._monitor_thread = MonitorThread(self._repository, self._config)
         self._monitor_thread.hosts_offline.connect(self._on_hosts_offline)
         self._monitor_thread.scan_started.connect(self._on_scan_started)
         self._monitor_thread.scan_finished.connect(self._on_scan_finished)
+        self._monitor_thread.host_status_changed.connect(self._repository.update_status)
+        self._monitor_thread.error_occurred.connect(lambda e: logging.error(f"MonitorThread Error: {e}"))
         self._monitor_thread.start()
 
     # ==================== DATA HANDLING ====================
@@ -215,28 +219,26 @@ class MainWindow(QMainWindow):
     @pyqtSlot(list)
     def _on_hosts_updated(self, host_ids: List[str]):
         """
-        Обработка сигнала об обновлении данных от DataManager.
-        Это ключевой метод для производительности.
+        Обработка сигнала об обновлении данных от Repository.
         """
         if not host_ids:
             # Полное обновление (удаление, добавление)
             self._refresh_table(full_reload=True)
         else:
             # Частичное обновление
-            updated_hosts = self._data_manager.get_hosts_by_ids(host_ids)
+            updated_hosts = self._repository.get_hosts_by_ids(host_ids)
             self._table_model.update_hosts(updated_hosts)
             
             # Обновление статистики (легкое)
             self._update_dashboard_stats()
             
-            # Обновляем фильтры (чтобы убрать/показать строки при смене статуса)
+            # Обновляем фильтры
             if self._filter_manager:
                 self._filter_manager.apply_filters()
 
-
     def _refresh_table(self, full_reload: bool = False):
         """Полная перезагрузка данных таблицы"""
-        hosts = self._data_manager.get_all_hosts()
+        hosts = self._repository.get_all()
         self._table_model.set_hosts(hosts)
         
         # Обновляем группы
@@ -257,7 +259,7 @@ class MainWindow(QMainWindow):
 
     def _update_dashboard_stats(self):
         """Обновление дашборда запросом в БД"""
-        stats = self._data_manager.get_stats()
+        stats = self._repository.get_stats()
         self._dashboard_manager.update_stats(stats)
         self._update_status_bar(stats.get("TOTAL", 0))
 
@@ -283,7 +285,7 @@ class MainWindow(QMainWindow):
 
     def _update_status_bar(self, total: int = None):
         if total is None:
-            stats = self._data_manager.get_stats()
+            stats = self._repository.get_stats()
             total = stats.get("TOTAL", 0)
             
         msg = f"Узлов: {total} | Мониторинг активен (SQLite Mode)"
@@ -339,7 +341,7 @@ class MainWindow(QMainWindow):
     # ==================== USER ACTIONS ====================
 
     def _on_table_double_clicked(self, index: QModelIndex) -> None:
-        HostManager.edit_host(self, index.row(), self._table_model, self._groups, self._data_manager)
+        HostManager.edit_host(self, index.row(), self._table_model, self._groups, self._repository)
 
     def _on_dashboard_clicked(self, key: str):
         if not self._filter_manager: return
@@ -357,7 +359,7 @@ class MainWindow(QMainWindow):
                 self._filter_manager.set_status_filter(target_title)
 
     def _add_host(self) -> None:
-        HostManager.add_host(self, self._groups, self._data_manager)
+        HostManager.add_host(self, self._groups, self._repository)
 
     def _add_group(self) -> None:
         group_name, ok = QInputDialog.getText(self, "Новая группа", "Введите название группы:", text="")
@@ -372,21 +374,18 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "Ошибка", "Группа с таким названием уже существует")
 
     def _delete_selected(self) -> None:
-        HostManager.delete_selected(self, self._table_model, self._data_manager)
+        HostManager.delete_selected(self, self._table_model, self._repository)
 
     def _import_from_excel(self):
-        # TODO: Refactor ExportImportManager to use DataManager too
-        # For now, it might be broken if it relies on _hosts list.
-        # But user asked for "SQLite Architecture", Import/Export is secondary but I should check it.
-        # Keeping it as is might crash if it expects a list.
-        # ExportImportManager methods: import_from_excel(hosts, hosts_mutex, callback)
-        # I don't have hosts list anymore.
-        QMessageBox.information(self, "Инфо", "Функция импорта временно недоступна в новой архитектуре")
+        self._export_import_manager.import_from_excel()
 
     def _export_to_excel(self):
-        hosts = self._data_manager.get_all_hosts()
-        # ExportImportManager expects list, so this is fine
-        self._export_import_manager.export_to_excel(hosts, QMutex()) # Dummy mutex
+        hosts = self._repository.get_all()
+        # Export filtered list or all? Currently passing all from repo.
+        # But if table filters are active, user might expect filtered export?
+        # HostManager has filtered logic? 
+        # Typically Export ALL is safer default unless "Export View" asked.
+        self._export_import_manager.export_to_excel(hosts)
 
     def _toggle_theme(self):
         if self._theme_manager: self._theme_manager.toggle_theme()
@@ -431,3 +430,4 @@ class MainWindow(QMainWindow):
         if hasattr(self, '_db_manager'):
             self._db_manager.close()
         event.accept()
+

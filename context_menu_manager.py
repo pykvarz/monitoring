@@ -17,7 +17,7 @@ from constants import (
     get_menu_style, SVG_MAINTENANCE, SVG_ONLINE, SVG_WAITING,
     get_svg_add_group, get_svg_delete, get_svg_ping, get_svg_edit
 )
-from data_manager import DataManager
+from core.host_repository import HostRepository
 
 class ContextMenuManager:
     """
@@ -25,7 +25,7 @@ class ContextMenuManager:
     """
 
     def __init__(self, parent, table, table_model, groups: List[str], 
-                 theme_getter: Callable, data_manager: DataManager):
+                 theme_getter: Callable, repository: HostRepository):
         """
         Инициализация менеджера контекстных меню
         
@@ -35,14 +35,14 @@ class ContextMenuManager:
             table_model: Модель таблицы
             groups: Список групп
             theme_getter: Функция получения текущей темы
-            data_manager: Менеджер данных
+            repository: Репозиторий хостов
         """
         self._parent = parent
         self._table = table
         self._table_model = table_model
         self._groups = groups
         self._get_theme = theme_getter
-        self._data_manager = data_manager
+        self._repository = repository
 
     def update_groups(self, groups):
         """Обновление списка групп"""
@@ -81,13 +81,13 @@ class ContextMenuManager:
         if action == action_ping:
             self._ping_host_cmd(row)
         elif action == action_edit:
-            HostManager.edit_host(self._parent, row, self._table_model, self._groups, self._data_manager)
+            HostManager.edit_host(self._parent, row, self._table_model, self._groups, self._repository)
         elif action == action_delete:
-            HostManager.delete_host(self._parent, row, self._table_model, self._data_manager)
+            HostManager.delete_host(self._parent, row, self._table_model, self._repository)
         elif action == action_maint:
-            HostManager.toggle_maintenance(self._parent, row, self._table_model, self._data_manager)
+            HostManager.toggle_maintenance(self._parent, row, self._table_model, self._repository)
         elif action == action_notify:
-            HostManager.toggle_notifications(self._parent, row, self._table_model, self._data_manager)
+            HostManager.toggle_notifications(self._parent, row, self._table_model, self._repository)
 
     def show_bulk_menu(self, sender):
         """Показ меню массовых действий"""
@@ -104,13 +104,13 @@ class ContextMenuManager:
         action = menu.exec_(sender.mapToGlobal(sender.rect().bottomLeft()))
 
         if action == action_maint:
-            HostManager.toggle_maintenance_selected(self._parent, self._table_model, self._data_manager)
+            HostManager.toggle_maintenance_selected(self._parent, self._table_model, self._repository)
         elif action == action_group:
-            HostManager.change_group_selected(self._parent, self._table_model, self._groups, self._data_manager)
+            HostManager.change_group_selected(self._parent, self._table_model, self._groups, self._repository)
         elif action == action_notify:
-            HostManager.toggle_notifications_selected(self._parent, self._table_model, self._data_manager)
+            HostManager.toggle_notifications_selected(self._parent, self._table_model, self._repository)
         elif action == action_delete:
-            HostManager.delete_selected(self._parent, self._table_model, self._data_manager)
+            HostManager.delete_selected(self._parent, self._table_model, self._repository)
 
     def show_header_context_menu(self, pos: QPoint, config) -> None:
         """Контекстное меню заголовка таблицы"""

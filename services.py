@@ -81,12 +81,42 @@ class PingService(IPingService):
 
     @staticmethod
     def ping_host(ip: str, timeout: float = 2.0) -> Optional[bool]:
-        """Выполнение ping-запроса"""
-        if not ping:
-            return None
+        """Выполнение ping-запроса с фоллбэком на системный ping"""
+        # 1. Попытка через ping3 (быстро, но требует прав)
+        if ping:
+            try:
+                res = ping(ip, timeout=timeout)
+                if isinstance(res, float):
+                    return True
+            except (OSError, ValueError, RuntimeError, PermissionError) as e:
+                logging.warning(f"Ошибка ping3 {ip}: {e}")
+        
+        # 2. Фоллбэк на системный ping (работает всегда)
+        return PingService._system_ping(ip, timeout)
 
+    @staticmethod
+    def _system_ping(host: str, timeout: float = 2.0) -> bool:
+        import subprocess
+        import platform
+        
+        param = '-n' if platform.system().lower() == 'windows' else '-c'
+        timeout_ms = int(timeout * 1000)
+        timeout_param = '-w' if platform.system().lower() == 'windows' else '-W'
+        
+        command = ['ping', param, '1', timeout_param, str(timeout_ms), host]
+        
         try:
-            return ping(ip, timeout=timeout)
-        except (OSError, ValueError, RuntimeError) as e:
-            logging.warning(f"Ошибка ping {ip}: {e}")
-            return None
+            # Creation flags to hide window on Windows
+            creationflags = 0
+            if platform.system().lower() == 'windows':
+                creationflags = 0x08000000  # CREATE_NO_WINDOW
+                
+            subprocess.check_call(
+                command, 
+                stdout=subprocess.DEVNULL, 
+                stderr=subprocess.DEVNULL,
+                creationflags=creationflags
+            )
+            return True
+        except (subprocess.CalledProcessError, Exception):
+            return False

@@ -148,7 +148,9 @@ def setup_container() -> DIContainer:
     data_manager = DataManager(db_manager)
     container.register_singleton(DataManager, data_manager)
 
-    container.register_singleton(HostRepository, HostRepository())
+    # Repository wraps DataManager
+    host_repository = HostRepository(data_manager)
+    container.register_singleton(HostRepository, host_repository)
     
     # Регистрация Infrastructure сервисов
     container.register_singleton(IStorageRepository, StorageManager())

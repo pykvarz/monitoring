@@ -1,0 +1,26 @@
+[
+  {
+    "name": "ATM02",
+    "ip": "192.168.14.4",
+    "address": "",
+    "group": "ATM",
+    "status": "ONLINE",
+    "last_seen": null,
+    "offline_since": "2026-01-12T07:11:06.633676+00:00",
+    "notified": false,
+    "notifications_enabled": true,
+    "id": "ddaad1b5-71a4-4cff-9d45-1b9bbfbc8f10"
+  },
+  {
+    "name": "ATM01",
+    "ip": "192.168.14.1",
+    "address": "",
+    "group": "ATM",
+    "status": "OFFLINE",
+    "last_seen": null,
+    "offline_since": "2026-01-12T07:11:19.514668+00:00",
+    "notified": false,
+    "notifications_enabled": true,
+    "id": "491fde0d-241e-45e9-ac30-c1164c8c3722"
+  }
+]

@@ -12,10 +12,10 @@
 import logging
 import json
 from datetime import datetime
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 
 from PyQt5.QtCore import QObject, pyqtSignal, QTimer, QMutex, QMutexLocker
-from PyQt5.QtSql import QSqlQuery
+from PyQt5.QtSql import QSqlQuery, QSqlDatabase
 
 from database import DatabaseManager
 from models import Host
@@ -38,13 +38,15 @@ class DataManager(QObject):
         self._update_timer.timeout.connect(self._flush_updates)
         self._batch_mutex = QMutex()
         
-    def get_all_hosts(self) -> List[Host]:
+    def get_all_hosts(self, connection_name: str = None) -> List[Host]:
         """Получение всех хостов из БД"""
         hosts = []
-        if not self.db_manager.get_db().isOpen():
+        db = QSqlDatabase.database(connection_name) if connection_name else self.db_manager.get_db()
+        
+        if not db.isOpen():
             return hosts
 
-        query = QSqlQuery("SELECT * FROM hosts ORDER BY status, name")
+        query = QSqlQuery("SELECT * FROM hosts ORDER BY status, name", db)
         while query.next():
             host = self._record_to_host(query)
             hosts.append(host)
@@ -55,23 +57,65 @@ class DataManager(QObject):
         """Добавление нового хоста"""
         query = QSqlQuery()
         query.prepare("""
-            INSERT INTO hosts (id, ip, name, grp, icon, status, notifications_enabled)
-            VALUES (:id, :ip, :name, :grp, :icon, :status, :notifications_enabled)
+            INSERT INTO hosts (id, ip, name, grp, status, notifications_enabled)
+            VALUES (:id, :ip, :name, :grp, :status, :notifications_enabled)
         """)
         query.bindValue(":id", host.id)
         query.bindValue(":ip", host.ip)
         query.bindValue(":name", host.name)
         query.bindValue(":grp", host.group)
-        query.bindValue(":icon", host.icon)
         query.bindValue(":status", host.status)
         query.bindValue(":notifications_enabled", 1 if host.notifications_enabled else 0)
         
         if query.exec_():
-            self._trigger_update([host.id])
+            self._trigger_update() # Полное обновление для корректного отображения и сортировки
             return True
         else:
             logging.error(f"Ошибка добавления хоста: {query.lastError().text()}")
             return False
+
+    def add_hosts(self, hosts: List[Host]) -> Tuple[int, int]:
+        """
+        Пакетное добавление хостов (Transaction)
+        Returns: (added_count, errors_count)
+        """
+        added = 0
+        errors = 0
+        db = self.db_manager.get_db()
+        
+        if not db.transaction():
+            logging.error("Failed to start transaction for batch add")
+            return 0, len(hosts)
+
+        query = QSqlQuery(db)
+        query.prepare("""
+            INSERT INTO hosts (id, ip, name, grp, status, notifications_enabled)
+            VALUES (:id, :ip, :name, :grp, :status, :notifications_enabled)
+        """)
+        
+        for host in hosts:
+            query.bindValue(":id", host.id)
+            query.bindValue(":ip", host.ip)
+            query.bindValue(":name", host.name)
+            query.bindValue(":grp", host.group)
+            query.bindValue(":status", host.status)
+            query.bindValue(":notifications_enabled", 1 if host.notifications_enabled else 0)
+            
+            if query.exec_():
+                added += 1
+            else:
+                logging.warning(f"Failed to add host {host.name}: {query.lastError().text()}")
+                errors += 1
+                
+        if not db.commit():
+            logging.error("Failed to commit batch add transaction")
+            db.rollback()
+            return 0, len(hosts)
+            
+        if added > 0:
+            self._trigger_update() # Full update after batch import
+            
+        return added, errors
 
     def delete_host(self, host_id: str) -> bool:
         """Удаление хоста"""
@@ -87,8 +131,6 @@ class DataManager(QObject):
     def update_host_status(self, host_id: str, status: str, offline_since: Optional[str] = None):
         """
         Обновление статуса хоста.
-        Этот метод вызывается очень часто (1000 узлов -> до 1000 вызовов/сек).
-        Поэтому он просто кидает запрос в БД (WAL справится) и добавляет ID в очередь на обновление UI.
         """
         query = QSqlQuery()
         
@@ -128,19 +170,17 @@ class DataManager(QObject):
             SET ip = :ip, 
                 name = :name, 
                 grp = :grp, 
-                icon = :icon, 
                 notifications_enabled = :notifications_enabled
             WHERE id = :id
         """)
         query.bindValue(":ip", host.ip)
         query.bindValue(":name", host.name)
         query.bindValue(":grp", host.group)
-        query.bindValue(":icon", host.icon)
         query.bindValue(":notifications_enabled", 1 if host.notifications_enabled else 0)
         query.bindValue(":id", host.id)
         
         if query.exec_():
-            self._trigger_update([host.id])
+            self._trigger_update() # Полное обновление для пересортировки
             return True
         else:
             logging.error(f"Ошибка обновления информации хоста {host.id}: {query.lastError().text()}")
@@ -193,7 +233,6 @@ class DataManager(QObject):
             ip=query.value("ip"),
             name=query.value("name"),
             group=query.value("grp"),
-            icon=query.value("icon"),
             status=query.value("status"),
             offline_since=query.value("offline_since"),
             notifications_enabled=bool(query.value("notifications_enabled"))

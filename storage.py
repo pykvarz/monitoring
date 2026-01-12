@@ -122,8 +122,8 @@ class StorageManager(IStorageRepository):
         from PyQt5.QtSql import QSqlQuery
         sql = QSqlQuery()
         sql.prepare("""
-            INSERT OR IGNORE INTO hosts (id, ip, name, grp, icon, status, notifications_enabled, offline_since, last_seen)
-            VALUES (:id, :ip, :name, :grp, :icon, :status, :notif, :offline, :seen)
+            INSERT OR IGNORE INTO hosts (id, ip, name, grp, status, notifications_enabled, offline_since, last_seen)
+            VALUES (:id, :ip, :name, :grp, :status, :notif, :offline, :seen)
         """)
         
         count = 0
@@ -134,7 +134,6 @@ class StorageManager(IStorageRepository):
                 sql.bindValue(":ip", host.ip)
                 sql.bindValue(":name", host.name)
                 sql.bindValue(":grp", host.group)
-                sql.bindValue(":icon", host.icon)
                 sql.bindValue(":status", host.status)
                 sql.bindValue(":notif", 1 if host.notifications_enabled else 0)
                 sql.bindValue(":offline", host.offline_since)

@@ -95,7 +95,11 @@ class DashboardManager:
         theme = getattr(self._config, 'theme', 'light')
         text_color = "#666" if theme == "light" else "#aaaaaa"
         
-        total_hosts = sum(self._stats_counts.values())
+        # Используем значение TOTAL из словаря или считаем сумму (исключая сам ключ TOTAL если он есть)
+        if "TOTAL" in self._stats_counts:
+            total_hosts = self._stats_counts["TOTAL"]
+        else:
+            total_hosts = sum(v for k, v in self._stats_counts.items() if k != "TOTAL")
         
         # Обновление карточки "Всего узлов"
         svg_total = get_svg_total(theme)
