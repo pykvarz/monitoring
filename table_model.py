@@ -155,13 +155,19 @@ class HostTableModel(QAbstractTableModel):
                 return ""
 
         elif role == Qt.BackgroundRole:
-            if col == 0:
-                color_code = HostStatus[host.status].color
-                color = QColor(color_code)
-                # В темной теме делаем фон более насыщенным для лучшей видимости
-                alpha = 80 if self._theme == "dark" else 30
-                color.setAlpha(alpha)
-                return QBrush(color)
+            # Красим ВСЮ строку в цвет статуса
+            color_code = HostStatus[host.status].color
+            color = QColor(color_code)
+            
+            # Настройка прозрачности в зависимости от темы
+            # В темной теме строка должна быть темнее, но с оттенком цвета
+            # В светлой - пастельный оттенок
+            if self._theme == "dark":
+                color.setAlpha(80)  # Более насыщенный для темной темы
+            else:
+                color.setAlpha(50)  # Немного ярче для светлой
+            
+            return QBrush(color)
 
         elif role == Qt.TextAlignmentRole:
             # Выравнивание по центру для определенных колонок

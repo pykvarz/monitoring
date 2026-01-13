@@ -12,6 +12,10 @@ except ImportError:
 
 try:
     from plyer import notification
+    # Explicit import to force PyInstaller to bundle the Windows implementation
+    import sys
+    if sys.platform == 'win32':
+        import plyer.platforms.win.notification
 except ImportError:
     notification = None
 
@@ -54,6 +58,7 @@ class NotificationService(INotificationService):
             notification.notify(
                 title=title,
                 message=message,
+                app_name="Network Monitor",
                 timeout=5
             )
 
@@ -70,6 +75,7 @@ class NotificationService(INotificationService):
             notification.notify(
                 title=title,
                 message=message,
+                app_name="Network Monitor",
                 timeout=5
             )
         except (ImportError, RuntimeError, OSError) as e:

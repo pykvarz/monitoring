@@ -134,44 +134,47 @@ class MainWindow(QMainWindow):
         self._main_layout.setSpacing(10)
         self._main_layout.setContentsMargins(10, 10, 10, 10)
 
-        # === Dashboard + Поиск + Фильтры (в одной строке) ===
-        top_layout = QHBoxLayout()
-        top_layout.setSpacing(15)
+        # === Dashboard (Статистика) ===
+        self._top_frame = QFrame()
+        self._top_frame.setFrameStyle(QFrame.StyledPanel | QFrame.Raised)
+        self._top_frame.setStyleSheet(get_dashboard_style(theme))
         
-        # Dashboard слева
+        dashboard_layout = QHBoxLayout(self._top_frame)
+        dashboard_layout.setSpacing(15)
+        dashboard_layout.setContentsMargins(12, 6, 12, 6)
+        
         self._dashboard_frame, self._dashboard_labels = UIComponents.create_dashboard(theme)
         for label in self._dashboard_labels.values():
             label.clicked.connect(self._on_dashboard_clicked)
+            dashboard_layout.addWidget(label)
+            
+        dashboard_layout.addStretch()
+        self._main_layout.addWidget(self._top_frame)
+
+        # === Меню + Поиск + Фильтры ===
+        menubar = MenuBuilder.create_menu_bar(self, theme)
         
-        # Извлекаем внутренний layout из dashboard frame
-        dashboard_inner_layout = self._dashboard_frame.layout()
+        # Создаем контейнер для фильтров в строке меню
+        filter_container = QWidget()
+        filter_layout = QHBoxLayout(filter_container)
+        filter_layout.setContentsMargins(10, 0, 10, 0)
+        filter_layout.setSpacing(10)
         
-        # Добавляем dashboard labels в общий layout
-        for label in self._dashboard_labels.values():
-            top_layout.addWidget(label)
-        
-        # Растяжка между dashboard и фильтрами
-        top_layout.addStretch()
-        
-        # Фильтры справа
+        # Создаем виджеты фильтров
         search_result = UIComponents.create_search_bar(self, [], theme)
         self._group_filter = search_result[2]
         self._search_edit = search_result[1]
         
-        # Добавляем фильтры в общий layout
-        top_layout.addWidget(self._group_filter)
-        top_layout.addWidget(self._search_edit)
+        # Настройка стилей для меню-бара
+        # Немного уменьшим высоту для компактности
+        self._search_edit.setMaximumHeight(26)
+        self._group_filter.setMaximumHeight(26)
         
-        # Оборачиваем в frame для стиля
-        top_frame = QFrame()
-        top_frame.setFrameStyle(QFrame.StyledPanel | QFrame.Raised)
-        top_frame.setStyleSheet(get_dashboard_style(theme))
-        top_frame.setLayout(top_layout)
+        filter_layout.addWidget(self._group_filter)
+        filter_layout.addWidget(self._search_edit)
         
-        self._main_layout.addWidget(top_frame)
-        
-        # === Меню ===
-        MenuBuilder.create_menu_bar(self, theme)
+        # Устанавливаем контейнер в левый угол меню
+        menubar.setCornerWidget(filter_container, Qt.TopLeftCorner)
 
         # === Таблица ===
         self._table, self._table_model = UIComponents.create_table(self, theme)
@@ -209,9 +212,9 @@ class MainWindow(QMainWindow):
             self, self._config, self._storage, 
             self._table, self._table_model
         )
-        # Dashboard уже встроен в top_frame, передаем None
+        # Передаем self._top_frame как dashboard_frame
         self._theme_manager.set_ui_components(
-            None,  # dashboard_frame теперь часть top_frame
+            self._top_frame,
             self._dashboard_labels,
             None,  # toolbar удален
             None,  # filters удалены
