@@ -11,7 +11,7 @@ COLOR_TOTAL = "#007bff"
 
 # Цвета темы (Dark Mode)
 DARK_BG = "#1e1e1e"
-DARK_SURFACE = "#2d2d2d"
+DARK_SURFACE = "#2b2d30"
 DARK_BORDER = "#404040"
 DARK_TEXT = "#e1e1e1"
 DARK_TEXT_SECONDARY = "#aaaaaa"

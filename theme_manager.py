@@ -21,6 +21,7 @@ from constants import (
     COLOR_TOTAL
 )
 from ui_components import UIComponents
+from menu_builder import MenuBuilder
 
 
 class ThemeManager:
@@ -92,6 +93,7 @@ class ThemeManager:
             3000
         )
 
+
     def _apply_theme(self, theme: str) -> None:
         """
         Применение темы ко всем компонентам
@@ -114,6 +116,9 @@ class ThemeManager:
         # Обновляем карточки в дашборде
         if self._dashboard_labels:
             self._update_dashboard_cards(theme)
+        
+        # Обновляем иконки меню
+        MenuBuilder.update_menu_icons(self._window.menuBar(), theme)
         
         # Обновляем иконки кнопок в тулбаре
         if self._toolbar_layout:
