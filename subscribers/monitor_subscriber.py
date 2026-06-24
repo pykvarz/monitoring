@@ -59,6 +59,9 @@ class MonitorSubscriber(QObject):
         """
         logging.info(f"MonitorSubscriber: Host deleted {old_host.name} ({old_host.ip})")
         
+        # Чистим кеш статусов
+        self._monitor_thread.remove_from_cache(host_id)
+        
         # Прерываем текущий цикл для немедленного исключения хоста из мониторинга
         self._monitor_thread.interrupt_cycle()
     
