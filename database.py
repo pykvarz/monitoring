@@ -71,6 +71,7 @@ class DatabaseManager:
             id TEXT PRIMARY KEY,
             ip TEXT NOT NULL,
             name TEXT,
+            address TEXT DEFAULT '',
             grp TEXT DEFAULT 'Default',
             icon TEXT,
             status TEXT DEFAULT 'UNKNOWN',
@@ -86,6 +87,10 @@ class DatabaseManager:
         # Индексы для hosts
         query.exec_("CREATE INDEX IF NOT EXISTS idx_hosts_status ON hosts(status)")
         query.exec_("CREATE INDEX IF NOT EXISTS idx_hosts_grp ON hosts(grp)")
+
+        # Миграция: добавляем колонку address если её нет (для существующих БД)
+        query.exec_("ALTER TABLE hosts ADD COLUMN address TEXT DEFAULT ''")
+        # Ошибка игнорируется — если колонка уже есть, ALTER TABLE вернёт ошибку, это нормально
 
         # Таблица настроек (Key-Value хранилище)
         settings_table = """
