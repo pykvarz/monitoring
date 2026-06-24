@@ -44,6 +44,7 @@ class MonitorThread(QThread):
         self._executor: ThreadPoolExecutor = None
         self._force_scan_flag = False
         self._interrupt_flag = False  # Флаг для прерывания текущего цикла
+        self._known_statuses: Dict[str, str] = {}  # Кеш статусов: {host_id: status}
         self._update_executor()
 
     def _update_executor(self) -> None:
@@ -77,6 +78,10 @@ class MonitorThread(QThread):
         """
         logging.info("MonitorThread: Cycle interrupt requested")
         self._interrupt_flag = True
+
+    def remove_from_cache(self, host_id: str) -> None:
+        """Удалить хост из кеша статусов (при удалении хоста)"""
+        self._known_statuses.pop(host_id, None)
 
     def stop(self) -> None:
         self._running = False
@@ -155,9 +160,13 @@ class MonitorThread(QThread):
                                 # Use signal to update in Main Thread (Thread Safety)
                                 self.host_status_changed.emit(host_id, new_status, offline_since)
                                 
-                                # Notification Logic
-                                if new_status == "OFFLINE" and host.status != "OFFLINE" and host.notifications_enabled:
+                                # Notification Logic — используем кеш статусов потока
+                                prev_status = self._known_statuses.get(host_id, host.status)
+                                if new_status == "OFFLINE" and prev_status != "OFFLINE" and host.notifications_enabled:
                                     newly_offline.append(host.name)
+                                
+                                # Обновляем кеш
+                                self._known_statuses[host_id] = new_status
 
                         except Exception as e:
                             logging.error(f"Error processing host result: {e}")
