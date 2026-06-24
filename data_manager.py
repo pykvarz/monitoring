@@ -62,12 +62,13 @@ class DataManager(QObject):
         """Добавление нового хоста"""
         query = QSqlQuery()
         query.prepare("""
-            INSERT INTO hosts (id, ip, name, grp, status, notifications_enabled)
-            VALUES (:id, :ip, :name, :grp, :status, :notifications_enabled)
+            INSERT INTO hosts (id, ip, name, address, grp, status, notifications_enabled)
+            VALUES (:id, :ip, :name, :address, :grp, :status, :notifications_enabled)
         """)
         query.bindValue(":id", host.id)
         query.bindValue(":ip", host.ip)
         query.bindValue(":name", host.name)
+        query.bindValue(":address", host.address)
         query.bindValue(":grp", host.group)
         query.bindValue(":status", host.status)
         query.bindValue(":notifications_enabled", 1 if host.notifications_enabled else 0)
@@ -97,14 +98,15 @@ class DataManager(QObject):
 
         query = QSqlQuery(db)
         query.prepare("""
-            INSERT INTO hosts (id, ip, name, grp, status, notifications_enabled)
-            VALUES (:id, :ip, :name, :grp, :status, :notifications_enabled)
+            INSERT INTO hosts (id, ip, name, address, grp, status, notifications_enabled)
+            VALUES (:id, :ip, :name, :address, :grp, :status, :notifications_enabled)
         """)
         
         for host in hosts:
             query.bindValue(":id", host.id)
             query.bindValue(":ip", host.ip)
             query.bindValue(":name", host.name)
+            query.bindValue(":address", host.address)
             query.bindValue(":grp", host.group)
             query.bindValue(":status", host.status)
             query.bindValue(":notifications_enabled", 1 if host.notifications_enabled else 0)
@@ -192,13 +194,15 @@ class DataManager(QObject):
         query.prepare("""
             UPDATE hosts 
             SET ip = :ip, 
-                name = :name, 
+                name = :name,
+                address = :address,
                 grp = :grp, 
                 notifications_enabled = :notifications_enabled
             WHERE id = :id
         """)
         query.bindValue(":ip", host.ip)
         query.bindValue(":name", host.name)
+        query.bindValue(":address", host.address)
         query.bindValue(":grp", host.group)
         query.bindValue(":notifications_enabled", 1 if host.notifications_enabled else 0)
         query.bindValue(":id", host.id)
@@ -260,6 +264,7 @@ class DataManager(QObject):
             id=query.value("id"),
             ip=query.value("ip"),
             name=query.value("name"),
+            address=query.value("address") or "",
             group=query.value("grp"),
             status=query.value("status"),
             offline_since=query.value("offline_since"),
